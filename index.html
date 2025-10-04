@@ -1,0 +1,319 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>American Aisle — Hot Deals & Coupons</title>
+  <link href="https://unpkg.com/tailwindcss@^2/dist/tailwind.min.css" rel="stylesheet">
+  <meta name="description" content="Find the best discounts, promos, and coupons from Amazon, Shopee, and more. Click and get redirected with affiliate deals." />
+  <style>
+    body{background:#f8fafc;color:#0f172a}
+    .card{background:#fff}
+    .admin-hidden{display:none}
+    .btn{cursor:pointer}
+  </style>
+</head>
+<body class="antialiased">
+  <div class="max-w-7xl mx-auto px-6 py-8">
+    <header class="flex items-center justify-between mb-6">
+      <div class="flex items-center space-x-3">
+        <div class="w-12 h-12 bg-indigo-600 text-white rounded flex items-center justify-center font-bold">AA</div>
+        <div>
+          <h1 class="text-2xl font-bold">American Aisle</h1>
+          <div class="text-sm text-gray-500">Curated promos, coupons & affiliate deals</div>
+        </div>
+      </div>
+      <div class="flex items-center space-x-3">
+        <button id="adminBtn" class="px-3 py-2 bg-yellow-400 rounded text-sm font-semibold">Admin</button>
+        <a href="#coupons" class="px-3 py-2 bg-indigo-600 text-white rounded text-sm">Coupons</a>
+      </div>
+    </header>
+
+    <!-- Search + Filters -->
+    <section class="mb-6 grid md:grid-cols-3 gap-4 items-center">
+      <input id="search" class="md:col-span-2 p-3 rounded border border-gray-300" placeholder="Search products or categories..." />
+      <select id="filterStore" class="p-3 rounded border border-gray-300">
+        <option value="">All stores</option>
+        <option value="Amazon">Amazon</option>
+        <option value="Shopee">Shopee</option>
+        <option value="Other">Other</option>
+      </select>
+    </section>
+
+    <!-- Featured Deals -->
+    <section id="featured" class="mb-8">
+      <h2 class="text-xl font-bold mb-4">🔥 Featured Deals</h2>
+      <div id="deals" class="grid md:grid-cols-3 gap-6"></div>
+    </section>
+
+    <!-- Coupons -->
+    <section id="coupons" class="mb-8">
+      <h2 class="text-xl font-bold mb-4">🎟️ Latest Coupons</h2>
+      <div id="couponList" class="grid md:grid-cols-2 gap-4"></div>
+    </section>
+
+    <!-- About -->
+    <section id="about" class="mb-8">
+      <h2 class="text-xl font-bold mb-2">About American Aisle</h2>
+      <p class="text-gray-600">We curate deals from Amazon, Shopee and more. Click any "Get Deal" to be redirected to the seller with your affiliate link. Set up your affiliate accounts and paste your tracking links in admin.</p>
+    </section>
+
+    <footer class="mt-12 text-gray-500 text-sm text-center border-t pt-4">© 2025 American Aisle — Affiliate store featuring Amazon & Shopee deals.</footer>
+  </div>
+
+  <!-- Card template -->
+  <template id="cardTpl">
+    <div class="card p-4 rounded-lg shadow border border-gray-200">
+      <img class="h-40 w-full object-cover rounded" src="" alt="">
+      <h3 class="mt-3 font-semibold"></h3>
+      <div class="text-sm text-gray-500 mt-1"></div>
+      <div class="mt-3 flex items-center justify-between">
+        <div class="font-bold"></div>
+        <a class="buyBtn px-3 py-1 rounded text-sm bg-green-600 text-white" target="_blank" rel="noopener noreferrer">Get Deal</a>
+      </div>
+    </div>
+  </template>
+
+  <!-- Admin panel (hidden until authentication) -->
+  <div id="adminPanel" class="admin-hidden fixed inset-0 bg-black bg-opacity-50 flex items-start justify-center p-6">
+    <div class="bg-white rounded-lg shadow max-w-3xl w-full p-6">
+      <div class="flex items-center justify-between mb-4">
+        <h3 class="text-lg font-semibold">Admin — Manage Products & Coupons</h3>
+        <div>
+          <button id="closeAdmin" class="px-3 py-1 rounded border mr-2">Close</button>
+          <button id="logoutAdmin" class="px-3 py-1 rounded bg-red-500 text-white">Logout</button>
+        </div>
+      </div>
+
+      <div class="grid md:grid-cols-2 gap-4">
+        <div>
+          <h4 class="font-semibold mb-2">Add / Edit Product</h4>
+          <form id="productForm" class="space-y-2">
+            <input id="p_id" type="hidden">
+            <input id="p_title" class="w-full p-2 border rounded" placeholder="Title (e.g. Stainless Spaghetti Maker)" required>
+            <input id="p_image" class="w-full p-2 border rounded" placeholder="Image URL">
+            <input id="p_price" class="w-full p-2 border rounded" placeholder="Price (e.g. $39.99)">
+            <input id="p_store" class="w-full p-2 border rounded" placeholder="Store (Amazon / Shopee / Other)">
+            <input id="p_aff" class="w-full p-2 border rounded" placeholder="Affiliate URL (full link)" required>
+            <div class="flex space-x-2">
+              <button id="saveProduct" class="px-3 py-2 bg-indigo-600 text-white rounded">Save</button>
+              <button id="clearForm" type="button" class="px-3 py-2 border rounded">Clear</button>
+            </div>
+          </form>
+
+          <h4 class="font-semibold mt-4 mb-2">Import / Export</h4>
+          <div class="mb-2">
+            <button id="exportBtn" class="px-3 py-2 border rounded">Export JSON</button>
+            <input id="importInput" type="file" accept="application/json" class="ml-2">
+          </div>
+
+        </div>
+        <div>
+          <h4 class="font-semibold mb-2">Products (click to edit)</h4>
+          <div id="adminList" class="space-y-2 max-h-72 overflow-auto"></div>
+        </div>
+      </div>
+
+      <hr class="my-4">
+      <h4 class="font-semibold mb-2">Manage Coupons</h4>
+      <form id="couponForm" class="grid grid-cols-3 gap-2 mb-4">
+        <input id="c_title" placeholder="Coupon title" class="p-2 border rounded col-span-2">
+        <input id="c_code" placeholder="Code or link" class="p-2 border rounded">
+        <button id="addCoupon" class="col-span-3 px-3 py-2 bg-green-600 text-white rounded">Add Coupon</button>
+      </form>
+      <div id="adminCoupons" class="space-y-2 max-h-40 overflow-auto"></div>
+    </div>
+  </div>
+
+  <script>
+    document.addEventListener('DOMContentLoaded',()=>{
+      // admin password (change in-file if you want another)
+      const adminPassword = 'admin123';
+      const STORAGE_KEY = 'aa_products_v1';
+      const COUPON_KEY = 'aa_coupons_v1';
+
+      // default sample data
+      const defaultProducts = [
+        {id: 'p1', title: 'All-Purpose Spaghetti Maker', image:'https://images.unsplash.com/photo-1585394041604-6f7d4a6e9e7a?auto=format&fit=crop&w=800&q=60', price:'$39.99', store:'Amazon', affiliate:'https://www.amazon.com/dp/B08EXAMPLE?tag=yourtag-20'},
+        {id: 'p2', title: 'Portable Charger Pro', image:'https://images.unsplash.com/photo-1519741492791-3a2b7a6d8d3b?auto=format&fit=crop&w=800&q=60', price:'$49.99', store:'Shopee', affiliate:'https://shopee.ph/product/12345?affid=your_aff_id'},
+        {id: 'p3', title: 'Compact Coffee Mill', image:'https://images.unsplash.com/photo-1580910051056-1b3c6f9c3aa0?auto=format&fit=crop&w=800&q=60', price:'$24.99', store:'Amazon', affiliate:'https://www.amazon.com/dp/B07EXAMPLE?tag=yourtag-20'}
+      ];
+
+      // elements
+      const dealsContainer = document.getElementById('deals');
+      const tpl = document.getElementById('cardTpl');
+      const searchInput = document.getElementById('search');
+      const filterStore = document.getElementById('filterStore');
+
+      // admin elements
+      const adminBtn = document.getElementById('adminBtn');
+      const adminPanel = document.getElementById('adminPanel');
+      const closeAdmin = document.getElementById('closeAdmin');
+      const logoutAdmin = document.getElementById('logoutAdmin');
+      const productForm = document.getElementById('productForm');
+      const p_id = document.getElementById('p_id');
+      const p_title = document.getElementById('p_title');
+      const p_image = document.getElementById('p_image');
+      const p_price = document.getElementById('p_price');
+      const p_store = document.getElementById('p_store');
+      const p_aff = document.getElementById('p_aff');
+      const adminList = document.getElementById('adminList');
+      const exportBtn = document.getElementById('exportBtn');
+      const importInput = document.getElementById('importInput');
+
+      const couponListEl = document.getElementById('couponList');
+      const couponForm = document.getElementById('couponForm');
+      const c_title = document.getElementById('c_title');
+      const c_code = document.getElementById('c_code');
+      const adminCoupons = document.getElementById('adminCoupons');
+
+      // load data
+      let products = loadProducts();
+      let coupons = loadCoupons();
+
+      function loadProducts(){
+        try{
+          const raw = localStorage.getItem(STORAGE_KEY);
+          if(!raw) { localStorage.setItem(STORAGE_KEY, JSON.stringify(defaultProducts)); return defaultProducts.slice(); }
+          return JSON.parse(raw);
+        }catch(e){ console.error('loadProducts error',e); return defaultProducts.slice(); }
+      }
+      function saveProducts(){ localStorage.setItem(STORAGE_KEY, JSON.stringify(products)); }
+
+      function loadCoupons(){
+        try{
+          const raw = localStorage.getItem(COUPON_KEY);
+          if(!raw) { localStorage.setItem(COUPON_KEY, JSON.stringify([])); return []; }
+          return JSON.parse(raw);
+        }catch(e){ console.error('loadCoupons',e); return []; }
+      }
+      function saveCoupons(){ localStorage.setItem(COUPON_KEY, JSON.stringify(coupons)); }
+
+      // render
+      function render(list){
+        dealsContainer.innerHTML = '';
+        list.forEach(p=>{
+          const node = tpl.content.cloneNode(true);
+          const img = node.querySelector('img');
+          img.src = p.image || 'https://via.placeholder.com/600x400?text=No+Image';
+          img.alt = p.title;
+          node.querySelector('h3').textContent = p.title;
+          node.querySelector('.text-sm').textContent = p.store || '';
+          node.querySelector('.font-bold').textContent = p.price || '';
+          const btn = node.querySelector('.buyBtn');
+          btn.href = p.affiliate || '#';
+          btn.addEventListener('click', ()=>{
+            // you could track clicks here (e.g. send to analytics) before redirect
+          });
+          dealsContainer.appendChild(node);
+        });
+      }
+
+      function renderCoupons(){
+        couponListEl.innerHTML = '';
+        coupons.forEach(c=>{
+          const el = document.createElement('div');
+          el.className = 'p-4 rounded-lg bg-green-50 border border-green-200';
+          el.innerHTML = `<h3 class=\"font-semibold\">${escapeHtml(c.title)}</h3><p class=\"text-gray-600\">${escapeHtml(c.code)}</p><a class=\"mt-2 inline-block bg-green-600 text-white px-3 py-1 rounded\" href=\"${c.link||'#'}\" target=\"_blank\">Use Coupon</a>`;
+          couponListEl.appendChild(el);
+        });
+      }
+
+      function escapeHtml(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+      // initial render
+      render(products);
+      renderCoupons();
+
+      // search & filter
+      function applyFilters(){
+        const q = (searchInput.value||'').toLowerCase().trim();
+        const store = (filterStore.value||'').trim();
+        const filtered = products.filter(p=>{
+          const matchQ = !q || p.title.toLowerCase().includes(q) || (p.store||'').toLowerCase().includes(q);
+          const matchStore = !store || (p.store||'').toLowerCase() === store.toLowerCase();
+          return matchQ && matchStore;
+        });
+        render(filtered);
+      }
+      searchInput.addEventListener('input', applyFilters);
+      filterStore.addEventListener('change', applyFilters);
+
+      // admin actions
+      adminBtn.addEventListener('click', ()=>{
+        const pw = prompt('Enter admin password:');
+        if(pw === adminPassword){
+          showAdmin();
+        }else{ alert('Wrong password'); }
+      });
+      function showAdmin(){ adminPanel.style.display = 'flex'; populateAdminList(); populateAdminCoupons(); }
+      closeAdmin.addEventListener('click', ()=>adminPanel.style.display='none');
+      logoutAdmin.addEventListener('click', ()=>{ adminPanel.style.display='none'; alert('Logged out'); });
+
+      function populateAdminList(){
+        adminList.innerHTML = '';
+        products.forEach(p=>{
+          const div = document.createElement('div');
+          div.className = 'p-2 border rounded flex items-center justify-between';
+          div.innerHTML = `<div><strong>${escapeHtml(p.title)}</strong><div class=\"text-xs text-gray-500\">${escapeHtml(p.store)} • ${escapeHtml(p.price||'')}</div></div>`;
+          const actions = document.createElement('div');
+          const edit = document.createElement('button'); edit.className='px-2 py-1 mr-2 border rounded'; edit.textContent='Edit';
+          const del = document.createElement('button'); del.className='px-2 py-1 bg-red-500 text-white rounded'; del.textContent='Delete';
+          edit.addEventListener('click',()=> loadIntoForm(p.id) );
+          del.addEventListener('click',()=>{ if(confirm('Delete product?')){ products = products.filter(x=> x.id!==p.id); saveProducts(); populateAdminList(); applyFilters(); } });
+          actions.appendChild(edit); actions.appendChild(del);
+          div.appendChild(actions);
+          adminList.appendChild(div);
+        });
+      }
+
+      function loadIntoForm(id){
+        const p = products.find(x=> x.id===id); if(!p) return;
+        p_id.value = p.id; p_title.value = p.title; p_image.value = p.image; p_price.value = p.price; p_store.value = p.store; p_aff.value = p.affiliate;
+        window.scrollTo({top:0,behavior:'smooth'});
+      }
+
+      productForm.addEventListener('submit',(e)=>{
+        e.preventDefault();
+        const id = p_id.value || ('p'+Date.now());
+        const item = { id, title: p_title.value.trim(), image: p_image.value.trim(), price: p_price.value.trim(), store: p_store.value.trim(), affiliate: p_aff.value.trim() };
+        const idx = products.findIndex(x=> x.id===id);
+        if(idx >= 0){ products[idx] = item; } else { products.unshift(item); }
+        saveProducts(); populateAdminList(); applyFilters(); productForm.reset(); p_id.value=''; alert('Saved');
+      });
+      document.getElementById('clearForm').addEventListener('click',()=>{ productForm.reset(); p_id.value=''; });
+
+      // import / export
+      exportBtn.addEventListener('click',()=>{
+        const dataStr = JSON.stringify(products, null, 2);
+        const blob = new Blob([dataStr], {type: 'application/json'});
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a'); a.href = url; a.download = 'american-aisle-products.json'; document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
+      });
+      importInput.addEventListener('change', (e)=>{
+        const file = e.target.files[0]; if(!file) return; const reader = new FileReader();
+        reader.onload = ()=>{
+          try{ const parsed = JSON.parse(reader.result); if(Array.isArray(parsed)){ products = parsed; saveProducts(); populateAdminList(); applyFilters(); alert('Imported'); } else alert('Invalid JSON'); }catch(err){ alert('Error parsing JSON'); }
+        }; reader.readAsText(file);
+      });
+
+      // coupons
+      couponForm.addEventListener('submit',(e)=>{
+        e.preventDefault();
+        const id = 'c'+Date.now();
+        coupons.unshift({id, title: c_title.value.trim(), code: c_code.value.trim(), link: c_code.value.trim()});
+        saveCoupons(); renderCoupons(); populateAdminCoupons(); couponForm.reset();
+      });
+
+      function populateAdminCoupons(){ adminCoupons.innerHTML=''; coupons.forEach(c=>{
+        const d = document.createElement('div'); d.className='p-2 border rounded flex items-center justify-between'; d.innerHTML=`<div><strong>${escapeHtml(c.title)}</strong><div class=\"text-xs text-gray-500\">${escapeHtml(c.code)}</div></div>`;
+        const del = document.createElement('button'); del.className='px-2 py-1 bg-red-500 text-white rounded'; del.textContent='Delete'; del.addEventListener('click',()=>{ if(confirm('Delete coupon?')){ coupons = coupons.filter(x=> x.id!==c.id); saveCoupons(); renderCoupons(); populateAdminCoupons(); } });
+        d.appendChild(del); adminCoupons.appendChild(d);
+      }); }
+
+      // helper: escape already used above
+
+    });
+  </script>
+</body>
+</html>
