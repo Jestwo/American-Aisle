@@ -1,0 +1,524 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Ultimate Comic Storyboard — Single HTML</title>
+<style>
+  :root{--panel-width:420px;--sidebar:320px}
+  body{margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,"Helvetica Neue",Arial;background:#f3f4f6;color:#111}
+  .app{display:flex;height:100vh}
+  .sidebar{width:var(--sidebar);padding:12px;border-right:1px solid #e6e6e6;box-sizing:border-box;background:#fff;overflow:auto}
+  h3{margin:6px 0 12px;font-size:18px}
+  .canvas-wrap{flex:1;display:flex;align-items:center;justify-content:center;padding:18px}
+  .board{background:#fff;border:1px solid #ddd;box-shadow:0 6px 18px rgba(0,0,0,.06);position:relative}
+  canvas{display:block}
+  .toolbar-row{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px}
+  input[type="color"]{padding:0;border:0;background:transparent;height:30px;width:42px}
+  button{padding:6px 10px;border:1px solid #ddd;background:#fff;border-radius:6px;cursor:pointer}
+  button.primary{background:#0b84ff;color:#fff;border-color:transparent}
+  .panels-list{margin-top:8px}
+  .panel-item{padding:8px;border:1px solid #f0f0f0;margin-top:8px;border-radius:6px;background:#fafafa;display:flex;align-items:center;justify-content:space-between}
+  .small{font-size:13px;color:#555}
+  .images-list{margin-top:6px}
+  .img-thumb{height:44px;margin-right:6px;border-radius:4px;border:1px solid #eee}
+  label{display:block;font-size:13px;margin-bottom:6px}
+  .hint{font-size:12px;color:#666;margin-top:10px}
+  .flex{display:flex;gap:8px}
+  .file-input{display:block}
+  .controls-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+  .footer-note{font-size:12px;color:#888;margin-top:12px}
+  .panel-count{font-weight:700}
+</style>
+</head>
+<body>
+<div class="app" id="app">
+  <div class="sidebar">
+    <h3>Ultimate Comic Storyboard</h3>
+
+    <div class="toolbar-row">
+      <label>Tool</label>
+      <select id="tool">
+        <option value="brush">Brush</option>
+        <option value="eraser">Eraser</option>
+        <option value="fill">Fill (Bucket)</option>
+        <option value="panel">Panel Cutter</option>
+        <option value="move">Move/Select</option>
+      </select>
+    </div>
+
+    <div class="toolbar-row">
+      <label>Stroke</label>
+      <input id="color" type="color" value="#000000" />
+      <input id="size" type="range" min="1" max="80" value="4" />
+      <span id="sizeVal" class="small">4</span>
+    </div>
+
+    <div class="toolbar-row">
+      <button id="undoBtn">Undo</button>
+      <button id="redoBtn">Redo</button>
+      <button id="exportBtn" class="primary">Export PNG</button>
+      <button id="clearBtn">Clear</button>
+    </div>
+
+    <hr />
+
+    <label>Images — Upload or Add URL</label>
+    <input id="file" class="file-input" type="file" accept="image/*" />
+    <div class="flex" style="margin-top:8px">
+      <input id="imgUrl" placeholder="paste image URL" style="flex:1;padding:6px" />
+      <button id="addUrlBtn">Add</button>
+    </div>
+    <div class="images-list" id="imagesList"></div>
+
+    <hr />
+
+    <label>Panels</label>
+    <div class="flex">
+      <button id="addPanelBtn">Add Panel</button>
+      <button id="resetPanelBtn">Reset</button>
+    </div>
+    <div class="panels-list" id="panelsList"></div>
+
+    <div style="margin-top:8px" class="hint">
+      Tip: Use the <strong>Panel Cutter</strong> to split a panel (select panel in list then Split V/H). Use Move tool to drag images.
+    </div>
+
+    <hr />
+    <div class="footer-note">
+      This is a one-file starter. For in-app image search (Unsplash/Pexels) or multiple file structure, I can add API hooks. Drop a file or paste a URL to import images.
+    </div>
+  </div>
+
+  <div class="canvas-wrap">
+    <div class="board" id="board" style="width:840px">
+      <!-- the visible canvas -->
+      <canvas id="stage" width="840" height="1120"></canvas>
+    </div>
+  </div>
+</div>
+
+<script>
+/*
+  Ultimate Comic Storyboard — single-file app
+  Features: brush, eraser, flood-fill, panel cutter, image upload/url (draggable), undo/redo, export.
+  Notes: This is a robust starter. For very large canvases or many strokes consider virtualization or using libraries.
+*/
+
+// --- App state
+const stage = document.getElementById('stage');
+const ctx = stage.getContext('2d', { alpha: false });
+const w = stage.width, h = stage.height;
+
+let tool = document.getElementById('tool').value;
+let color = document.getElementById('color').value;
+let size = parseInt(document.getElementById('size').value,10);
+
+let drawing = false;
+let last = null;
+let strokesLayer = document.createElement('canvas'); // offscreen drawing layer for strokes
+strokesLayer.width = w; strokesLayer.height = h;
+const sctx = strokesLayer.getContext('2d', { alpha: true });
+
+let images = []; // {id, img, x,y,w,h,scale,selected}
+let panels = []; // {id,x,y,w,h}
+let history = [];
+let historyIndex = -1;
+
+// UI refs
+const sizeVal = document.getElementById('sizeVal');
+const undoBtn = document.getElementById('undoBtn');
+const redoBtn = document.getElementById('redoBtn');
+const exportBtn = document.getElementById('exportBtn');
+const clearBtn = document.getElementById('clearBtn');
+const fileInput = document.getElementById('file');
+const addUrlBtn = document.getElementById('addUrlBtn');
+const imgUrl = document.getElementById('imgUrl');
+const imagesList = document.getElementById('imagesList');
+const panelsList = document.getElementById('panelsList');
+const addPanelBtn = document.getElementById('addPanelBtn');
+const resetPanelBtn = document.getElementById('resetPanelBtn');
+
+// init
+resetPanels();
+render();
+
+// --- Helpers
+function pushHistory() {
+  // limit history to 30
+  const data = stage.toDataURL();
+  history = history.slice(0, historyIndex + 1);
+  history.push(data);
+  historyIndex = history.length - 1;
+  updateHistoryButtons();
+}
+function updateHistoryButtons(){
+  undoBtn.disabled = historyIndex <= 0;
+  redoBtn.disabled = historyIndex >= history.length - 1;
+}
+function restoreFromDataURL(dataUrl) {
+  const img = new Image();
+  img.onload = () => {
+    // clear everything and draw snapshot as background image layer
+    sctx.clearRect(0,0,w,h);
+    ctx.clearRect(0,0,w,h);
+    ctx.drawImage(img,0,0);
+    // wipe strokes/images/panels state (simple restore)
+    images = [{id:'snap', img: img, x:0,y:0,w:w,h:h,scale:1,selected:false}];
+    panels = []; // user can reset panels manually
+    render();
+  };
+  img.src = dataUrl;
+}
+
+function uid(prefix='id'){ return prefix + '_' + Math.random().toString(36).slice(2,9); }
+
+// --- Drawing
+function setTool(t){ tool = t; }
+document.getElementById('tool').addEventListener('change', e => { setTool(e.target.value); });
+
+document.getElementById('color').addEventListener('input', e => { color = e.target.value; });
+document.getElementById('size').addEventListener('input', e => { size = parseInt(e.target.value,10); sizeVal.textContent = size; });
+
+stage.addEventListener('mousedown', (ev) => {
+  const pos = windowToCanvas(ev.clientX, ev.clientY);
+  if (tool === 'brush' || tool === 'eraser') {
+    drawing = true; last = pos;
+    sctx.lineJoin = sctx.lineCap = 'round';
+    sctx.globalCompositeOperation = (tool === 'eraser') ? 'destination-out' : 'source-over';
+    sctx.strokeStyle = color;
+    sctx.lineWidth = size;
+    sctx.beginPath();
+    sctx.moveTo(pos.x, pos.y);
+  } else if (tool === 'fill') {
+    // run flood fill on current composed stage
+    floodFillAt(pos.x, pos.y, hexToRgba(color));
+    pushHistory();
+  } else if (tool === 'panel') {
+    // nothing special on mousedown — panels are created via UI
+  } else if (tool === 'move') {
+    // detect image selection and set dragging
+    const hit = findImageAt(pos.x, pos.y);
+    if (hit) {
+      hit.dragging = true;
+      hit.dragOffset = { x: pos.x - hit.x, y: pos.y - hit.y };
+      images.forEach(img=> img.selected = (img===hit));
+      render();
+    } else {
+      images.forEach(img=> img.selected = false);
+      render();
+    }
+  }
+});
+stage.addEventListener('mousemove', (ev) => {
+  const pos = windowToCanvas(ev.clientX, ev.clientY);
+  if (drawing) {
+    sctx.lineTo(pos.x, pos.y);
+    sctx.stroke();
+    render();
+  } else if (tool === 'move') {
+    // drag selected image
+    const dragging = images.find(i=>i.dragging);
+    if (dragging) {
+      dragging.x = pos.x - dragging.dragOffset.x;
+      dragging.y = pos.y - dragging.dragOffset.y;
+      render();
+    }
+  }
+});
+stage.addEventListener('mouseup', (ev) => {
+  if (drawing) {
+    sctx.closePath();
+    drawing = false;
+    last = null;
+    pushHistory();
+  }
+  const dragging = images.find(i=>i.dragging);
+  if (dragging) {
+    dragging.dragging = false; pushHistory();
+  }
+});
+stage.addEventListener('dblclick', (ev) => {
+  // double click to quickly clear selection for images
+  images.forEach(i=>i.selected=false); render();
+});
+
+// window -> canvas coordinates
+function windowToCanvas(clientX, clientY) {
+  const rect = stage.getBoundingClientRect();
+  const x = (clientX - rect.left) * (stage.width / rect.width);
+  const y = (clientY - rect.top) * (stage.height / rect.height);
+  return { x, y };
+}
+
+// --- Images
+fileInput.addEventListener('change', e => {
+  const f = e.target.files[0];
+  if (!f) return;
+  const reader = new FileReader();
+  reader.onload = (ev) => {
+    addImageFromSrc(ev.target.result);
+  };
+  reader.readAsDataURL(f);
+});
+addUrlBtn.addEventListener('click', () => {
+  const val = imgUrl.value.trim();
+  if (!val) return alert('Paste a direct image URL (ends with .jpg/.png) or upload a file');
+  addImageFromSrc(val);
+  imgUrl.value = '';
+});
+
+function addImageFromSrc(src) {
+  const img = new Image();
+  img.crossOrigin = 'anonymous';
+  img.onload = () => {
+    const aspect = img.width / img.height;
+    const maxW = Math.min(600, w * 0.7);
+    const iw = Math.min(maxW, img.width);
+    const ih = iw / aspect;
+    const obj = { id: uid('img'), img, x: 60, y: 60, w: iw, h: ih, scale:1, selected:false };
+    images.push(obj);
+    refreshImagesList();
+    pushHistory();
+    render();
+  };
+  img.onerror = () => { alert('Failed loading image — check CORS or URL'); };
+  img.src = src;
+}
+
+function findImageAt(x,y){
+  for (let i = images.length-1; i>=0; i--){
+    const it = images[i];
+    if (x >= it.x && x <= it.x + it.w && y >= it.y && y <= it.y + it.h) return it;
+  }
+  return null;
+}
+
+function refreshImagesList(){
+  imagesList.innerHTML = '';
+  images.forEach(img=>{
+    const div = document.createElement('div');
+    div.style.display = 'flex'; div.style.alignItems = 'center'; div.style.marginTop='8px';
+    const thumb = document.createElement('img');
+    thumb.src = img.img.src; thumb.className='img-thumb';
+    const info = document.createElement('div'); info.style.flex='1';
+    info.innerHTML = `<div style="font-size:13px">${img.id}</div><div class="small">${Math.round(img.w)}×${Math.round(img.h)}</div>`;
+    const btn = document.createElement('button'); btn.textContent = 'Delete';
+    btn.addEventListener('click', ()=> { images = images.filter(i=>i!==img); refreshImagesList(); pushHistory(); render(); });
+    div.appendChild(thumb); div.appendChild(info); div.appendChild(btn);
+    imagesList.appendChild(div);
+  });
+}
+
+// --- Panels
+function resetPanels(){
+  panels = [{ id:'p0', x: 20, y: 20, w: w-40, h: h-40 }];
+  refreshPanelsList();
+  render();
+}
+addPanelBtn.addEventListener('click', () => {
+  panels.push({ id: uid('p'), x: 40, y: 40, w: 300, h: 300 });
+  refreshPanelsList(); pushHistory(); render();
+});
+resetPanelBtn.addEventListener('click', () => { resetPanels(); pushHistory(); });
+
+function refreshPanelsList(){
+  panelsList.innerHTML = '';
+  panels.forEach(p=>{
+    const div = document.createElement('div');
+    div.className = 'panel-item';
+    div.innerHTML = `<div><strong>${p.id}</strong><div class="small">${Math.round(p.w)}×${Math.round(p.h)}</div></div>`;
+    const controls = document.createElement('div');
+    const splitV = document.createElement('button'); splitV.textContent='Split V';
+    splitV.addEventListener('click', ()=> { splitPanel(p.id,'vertical'); });
+    const splitH = document.createElement('button'); splitH.textContent='Split H';
+    splitH.addEventListener('click', ()=> { splitPanel(p.id,'horizontal'); });
+    const del = document.createElement('button'); del.textContent='Delete';
+    del.addEventListener('click', ()=> { panels = panels.filter(x=>x.id!==p.id); refreshPanelsList(); pushHistory(); render();});
+    controls.appendChild(splitV); controls.appendChild(splitH); controls.appendChild(del);
+    div.appendChild(controls);
+    panelsList.appendChild(div);
+  });
+}
+
+function splitPanel(panelId, dir='vertical') {
+  const p = panels.find(x=>x.id===panelId);
+  if (!p) return;
+  if (dir === 'vertical') {
+    const left = { id: p.id + '_A', x: p.x, y: p.y, w: Math.floor(p.w/2)-2, h: p.h };
+    const right = { id: p.id + '_B', x: p.x + left.w + 4, y: p.y, w: p.w - left.w - 4, h: p.h };
+    panels = panels.filter(x=>x.id!==panelId).concat([left,right]);
+  } else {
+    const top = { id: p.id + '_A', x: p.x, y: p.y, w: p.w, h: Math.floor(p.h/2)-2 };
+    const bottom = { id: p.id + '_B', x: p.x, y: p.y + top.h + 4, w: p.w, h: p.h - top.h - 4 };
+    panels = panels.filter(x=>x.id!==panelId).concat([top,bottom]);
+  }
+  refreshPanelsList(); render();
+}
+
+// --- Flood fill (stack-based)
+/* Simple flood fill uses image data of the composed canvas (background + strokes + images + panels)
+   It paints directly onto the strokes layer with normal composite (so fill becomes a permanent stroke).
+*/
+function floodFillAt(px, py, fillColorArr){
+  // produce composed image into an offscreen canvas
+  const comp = document.createElement('canvas');
+  comp.width = w; comp.height = h;
+  const cctx = comp.getContext('2d', { alpha: false });
+  // draw background white
+  cctx.fillStyle = '#ffffff'; cctx.fillRect(0,0,w,h);
+  // draw images
+  images.forEach(img => {
+    try { cctx.drawImage(img.img, img.x, img.y, img.w, img.h); } catch(e){}
+  });
+  // draw panels outlines (no fill)
+  panels.forEach(p => {
+    cctx.lineWidth = 2; cctx.strokeStyle = '#222';
+    cctx.setLineDash([6,6]);
+    cctx.strokeRect(p.x, p.y, p.w, p.h);
+    cctx.setLineDash([]);
+  });
+  // draw strokes layer
+  cctx.drawImage(strokesLayer, 0, 0);
+  const imgData = cctx.getImageData(0,0,w,h);
+  const target = getPixel(imgData, px, py);
+  const newColor = fillColorArr; // [r,g,b,a]
+  if (colorsMatch(target, newColor)) return;
+  const stack = [[Math.floor(px), Math.floor(py)]];
+  const visited = new Uint8Array(w*h);
+  while (stack.length){
+    const [x,y] = stack.pop();
+    if (x<0||y<0||x>=w||y>=h) continue;
+    const idx = y*w + x;
+    if (visited[idx]) continue;
+    visited[idx] = 1;
+    const cur = getPixel(imgData, x, y);
+    if (!colorsMatch(cur, target)) continue;
+    setPixel(imgData, x, y, newColor);
+    stack.push([x+1,y]); stack.push([x-1,y]); stack.push([x,y+1]); stack.push([x,y-1]);
+  }
+  // put result onto strokesLayer (we only want fill to affect strokesLayer so subsequent draws overlay)
+  sctx.clearRect(0,0,w,h);
+  sctx.putImageData(imgData, 0, 0);
+  // but we want only filled areas to be applied to strokes layer; to keep things simple, we overwrite strokesLayer with composed result
+  // In more advanced version you'd extract only changed region or perform vector region fill.
+  render();
+}
+
+// pixel helpers
+function getPixel(imgData, x, y){
+  const idx = (y*imgData.width + x) * 4;
+  const d = imgData.data;
+  return [d[idx], d[idx+1], d[idx+2], d[idx+3]];
+}
+function setPixel(imgData, x, y, color){
+  const idx = (y*imgData.width + x) * 4;
+  const d = imgData.data;
+  d[idx] = color[0]; d[idx+1] = color[1]; d[idx+2] = color[2]; d[idx+3] = color[3];
+}
+function colorsMatch(a,b){ return a[0]===b[0]&&a[1]===b[1]&&a[2]===b[2]&&a[3]===b[3]; }
+function hexToRgba(hex){
+  const h = hex.replace('#','');
+  const bigint = parseInt(h,16);
+  return [(bigint>>16)&255, (bigint>>8)&255, bigint&255, 255];
+}
+
+// --- Render composed view
+function render(){
+  // clear main
+  ctx.clearRect(0,0,w,h);
+  // background white
+  ctx.fillStyle = '#fff';
+  ctx.fillRect(0,0,w,h);
+  // images (in order)
+  images.forEach(img=>{
+    try { ctx.drawImage(img.img, img.x, img.y, img.w, img.h); } catch(e){}
+    if (img.selected) {
+      ctx.strokeStyle = '#0b84ff'; ctx.lineWidth = 2; ctx.setLineDash([6,4]);
+      ctx.strokeRect(img.x-2, img.y-2, img.w+4, img.h+4);
+      ctx.setLineDash([]);
+    }
+  });
+  // panels outlines
+  panels.forEach(p=>{
+    ctx.strokeStyle = '#222'; ctx.lineWidth = 2; ctx.setLineDash([6,6]);
+    ctx.strokeRect(p.x, p.y, p.w, p.h);
+    ctx.setLineDash([]);
+  });
+  // strokes layer on top
+  ctx.drawImage(strokesLayer, 0, 0);
+}
+
+// --- Undo / Redo / Export / Clear
+undoBtn.addEventListener('click', () => {
+  if (historyIndex <= 0) return;
+  historyIndex--;
+  const data = history[historyIndex];
+  restoreFromDataURL(data);
+  updateHistoryButtons();
+});
+redoBtn.addEventListener('click', () => {
+  if (historyIndex >= history.length - 1) return;
+  historyIndex++;
+  const data = history[historyIndex];
+  restoreFromDataURL(data);
+  updateHistoryButtons();
+});
+exportBtn.addEventListener('click', () => {
+  // compose final image
+  const exportCanvas = document.createElement('canvas');
+  exportCanvas.width = w; exportCanvas.height = h;
+  const ectx = exportCanvas.getContext('2d', { alpha: false });
+  ectx.fillStyle = '#fff'; ectx.fillRect(0,0,w,h);
+  images.forEach(img => {
+    try { ectx.drawImage(img.img, img.x, img.y, img.w, img.h); } catch(e){}
+  });
+  panels.forEach(p => {
+    ectx.strokeStyle = '#222'; ectx.lineWidth = 2; ectx.setLineDash([6,6]);
+    ectx.strokeRect(p.x, p.y, p.w, p.h);
+    ectx.setLineDash([]);
+  });
+  ectx.drawImage(strokesLayer, 0, 0);
+  const uri = exportCanvas.toDataURL('image/png');
+  const a = document.createElement('a'); a.href = uri; a.download = 'storyboard.png';
+  document.body.appendChild(a); a.click(); a.remove();
+});
+clearBtn.addEventListener('click', () => {
+  if (!confirm('Clear all drawings, images and panels?')) return;
+  sctx.clearRect(0,0,w,h); images=[]; resetPanels(); pushHistory(); render();
+});
+
+// initial push to history
+pushHistory();
+
+// --- Utilities: for accessibility, keep stage scaled to container width (optional)
+window.addEventListener('resize', () => {
+  // keep canvas element scaled visually while internal resolution stays constant
+  const board = document.getElementById('board');
+  const targetWidth = Math.min(window.innerWidth - 400, 900);
+  board.style.width = targetWidth + 'px';
+});
+
+// --- simple keyboard shortcuts
+window.addEventListener('keydown', (e) => {
+  if ((e.ctrlKey || e.metaKey) && e.key === 'z') { undoBtn.click(); e.preventDefault(); }
+  if ((e.ctrlKey || e.metaKey) && e.key === 'y') { redoBtn.click(); e.preventDefault(); }
+  if (e.key === 'b') document.getElementById('tool').value = 'brush';
+  if (e.key === 'e') document.getElementById('tool').value = 'eraser';
+  tool = document.getElementById('tool').value;
+});
+
+// --- ensure brush settings reflect UI
+document.getElementById('tool').addEventListener('change', (e)=>tool=e.target.value);
+
+// --- finalize: on load set board width responsive
+(function initSize(){
+  const board = document.getElementById('board');
+  board.style.width = Math.min(window.innerWidth - 380, 840) + 'px';
+  // center canvas
+  render();
+})();
+
+</script>
+</body>
+</html>
